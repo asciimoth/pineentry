@@ -64,6 +64,7 @@
           rustc
           cargo
           rust-analyzer
+          rustfmt
 
           typos
           commitizen

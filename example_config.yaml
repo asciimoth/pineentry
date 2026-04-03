@@ -1,6 +1,7 @@
 # export PINEENTRY_CFG="./example_config.yaml"
 # cargo run
 
+debug: true
 servers:
   - non-existed-pinentry
   - pinentry-qt
