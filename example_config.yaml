@@ -1,2 +1,10 @@
 # export PINEENTRY_CFG="./example_config.yaml"
 # cargo run
+
+servers:
+  - non-existed-pinentry
+  - pinentry-qt
+  - pinentry-gtk
+  - pinentry-curses
+  - pinentry-tty
+
