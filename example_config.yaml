@@ -1,11 +1,48 @@
 # export PINEENTRY_CFG="./example_config.yaml"
 # cargo run
 
-debug: true
+debug: true # Debug mode will show more logs in output
 servers:
+  # PineEntry will try servers one-by-one until found working one
   - non-existed-pinentry
   - pinentry-qt
   - pinentry-gtk
   - pinentry-curses
   - pinentry-tty
+pins:
+  # NOTE: !String pins are for debug only. Store secrets outside of config.
+  very-secret-pin: !String very-secret-value
+  # File to read.
+  # NOTE: File content will NOT be trimmed.
+  file-pin: !RoFile /home/moth/secretfile1
+  # Ask at first time and remember in file in tmpdir.
+  # NOTE: PineEntry cache any input even one rejected by client.
+  cache-pin: !Cache
+  # Ask at first time and remember in file with provided path.
+  cache-pin2: !Cache /home/moth/custom-cache-dir/secretfile2
+  # Read pin from env var
+  env-pin: !Env MY_ENV_VAR
+# Rules checked one-by-one in same order
+rules:
+  # For pin requests with "abc" in title
+  - name: Rule1
+    title: abc
+    src: very-secret-pin # Pin source
+  # For pin requests with title exactly equal "efg"
+  - name: Rule2
+    title: ^efg$
+    src: file-pin
+  # For pin requests with "h i j" in prompt
+  - name: Rule3
+    prompt: h i j
+    src: cache-pin
+  # For pin requests with "klm" or "nop" in prompt
+  - name: Rule4
+    prompt: klm|nop
+    src: cache-pin2
+  # For pin requests with "env" in title or prompt
+  - name: Rule4
+    title: env
+    prompt: env
+    src: env-pin
 
