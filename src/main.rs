@@ -167,12 +167,13 @@ fn proxy(cfg: &Config, server: Server) -> anyhow::Result<()> {
                 return Ok(());
             }
             Event::ClientInput(s) => {
-                if let Some(p) = s.strip_prefix("SETPROMPT ") {
-                    // TODO: Usescape prompt
+                if let Some(rp) = s.strip_prefix("SETPROMPT ") {
+                    let p = unescape(rp);
                     if cfg.debug {
-                        println!("# SETTING PROMPT TO {}", p);
+                        print!("# SETTING PROMPT TO {}", rp);
+                        stdout.flush()?;
                     }
-                    prompt = p.to_string();
+                    prompt = p;
                 } else if s.starts_with("GETPIN") {
                     if cfg.debug {
                         println!("# ASKED FOR PIN");
@@ -202,6 +203,38 @@ fn proxy(cfg: &Config, server: Server) -> anyhow::Result<()> {
     }
     proc.kill()?;
     Ok(())
+}
+
+fn unescape(raw: &str) -> String {
+    // Trim trailing CR and LF
+    let raw = raw.trim_end_matches(|c| c == '\r' || c == '\n');
+
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            // Decode percent-encoded sequence
+            let hex: String = chars.by_ref().take(2).collect();
+            if hex.len() == 2 {
+                if let Ok(byte_val) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte_val as char);
+                } else {
+                    // Invalid hex, keep original
+                    result.push('%');
+                    result.push_str(&hex);
+                }
+            } else {
+                // Incomplete sequence, keep original
+                result.push('%');
+                result.push_str(&hex);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 fn get_pin(cfg: &Config, prompt: &str) -> anyhow::Result<Option<String>> {
