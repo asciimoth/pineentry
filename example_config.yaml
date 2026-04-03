@@ -2,6 +2,7 @@
 # cargo run
 
 debug: true # Debug mode will show more logs in output
+#notify_callback: ["notify-desktop", "<<<MSG>>>"]
 servers:
   # PineEntry will try servers one-by-one until found working one
   - non-existed-pinentry

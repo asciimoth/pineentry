@@ -26,6 +26,7 @@ const DEFAULT_CONFIG: &str = r#"# Default PineEntry config
 # See https://github.com/asciimoth/pineentry
 
 # debug: true # Debug mode will show more logs in output
+# notify_callback: ["notify-desktop", "<<<MSG>>>"]
 servers:
   # PineEntry will try servers one-by-one until found working one
   - pinentry-qt
@@ -99,6 +100,8 @@ struct Rule {
 struct Config {
     #[serde(default)]
     debug: bool,
+    #[serde(default)]
+    notify_callback: Vec<String>,
     #[serde(default)]
     servers: Vec<String>,
     #[serde(default)]
@@ -201,6 +204,7 @@ fn load() -> anyhow::Result<Config> {
             println!("# Missing config, using default");
             return Ok(Config {
                 debug: false,
+                notify_callback: vec![],
                 servers: default_servers,
                 pins: HashMap::new(),
                 rules: vec![],
@@ -212,6 +216,21 @@ fn load() -> anyhow::Result<Config> {
         cfg.servers = default_servers;
     }
     Ok(cfg)
+}
+
+fn notify(cfg: &Config, msg: &str) {
+    let mut cmd = cfg.notify_callback.clone();
+    if cmd.len() < 2 {
+        return;
+    }
+    for i in 1..cmd.len() {
+        if cmd[i] == "<<<MSG>>>" {
+            cmd[i] = msg.to_string();
+        }
+    }
+    if let Err(_) = Command::new(&cmd[0]).args(&cmd[1..]).output() {
+        println!("# FAILED TO EXECUTE NOTIFICATION CALLBACK")
+    }
 }
 
 fn run_server(server: &str) -> anyhow::Result<Server> {
@@ -456,9 +475,27 @@ fn get_pin(
         }
     };
     let pin = match src {
-        PinSrc::String(s) => s.clone(),
-        PinSrc::RoFile(path) => fs::read_to_string(shellexpand::tilde(&path).to_string())?,
-        PinSrc::Env(var) => std::env::var(var)?,
+        PinSrc::String(s) => {
+            notify(
+                cfg,
+                &format!("Constant string secret used for rule {}", rule.name),
+            );
+            s.clone()
+        }
+        PinSrc::RoFile(path) => {
+            let path = shellexpand::tilde(&path).to_string();
+            let pin = fs::read_to_string(&path)?;
+            notify(
+                cfg,
+                &format!("Secred from file {} used for rule {}", path, rule.name),
+            );
+            pin
+        }
+        PinSrc::Env(var) => {
+            let pin = std::env::var(var)?;
+            notify(cfg, &format!("${} value used for rule {}", var, rule.name));
+            pin
+        }
         PinSrc::Cache(path) => {
             let path = match path {
                 Some(path) => shellexpand::tilde(&path).to_string(),
@@ -475,7 +512,13 @@ fn get_pin(
                     .to_string(),
             };
             let pin = match fs::read_to_string(&path) {
-                Ok(pin) => pin,
+                Ok(pin) => {
+                    notify(
+                        cfg,
+                        &format!("Secred cached in {} used for rule {}", path, rule.name),
+                    );
+                    pin
+                }
                 Err(_) => ask_pin(rx, stdin)?,
             };
             ensure_parent_dirs(&path)?;
