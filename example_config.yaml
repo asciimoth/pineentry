@@ -14,12 +14,12 @@ pins:
   very-secret-pin: !String very-secret-value
   # File to read.
   # NOTE: File content will NOT be trimmed.
-  file-pin: !RoFile /home/moth/secretfile1
+  file-pin: !RoFile ~/secretfile1
   # Ask at first time and remember in file in tmpdir.
   # NOTE: PineEntry cache any input even one rejected by client.
   cache-pin: !Cache
   # Ask at first time and remember in file with provided path.
-  cache-pin2: !Cache /home/moth/custom-cache-dir/secretfile2
+  cache-pin2: !Cache ~/custom-cache-dir/secretfile2
   # Read pin from env var
   env-pin: !Env MY_ENV_VAR
 # Rules checked one-by-one in same order

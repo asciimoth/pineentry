@@ -390,12 +390,12 @@ fn get_pin(
     };
     let pin = match src {
         PinSrc::String(s) => s.clone(),
-        PinSrc::RoFile(path) => fs::read_to_string(path)?,
+        PinSrc::RoFile(path) => fs::read_to_string(shellexpand::tilde(&path).to_string())?,
         PinSrc::Env(var) => std::env::var(var)?,
         PinSrc::Cache(path) => {
             let path = match path {
-                Some(path) => path,
-                None => &std::env::temp_dir()
+                Some(path) => shellexpand::tilde(&path).to_string(),
+                None => std::env::temp_dir()
                     .join(format!(
                         "pinentry-{}",
                         get_user_by_uid(get_current_uid())
@@ -407,17 +407,16 @@ fn get_pin(
                     .to_string_lossy()
                     .to_string(),
             };
-            let pin = match fs::read_to_string(path) {
+            let pin = match fs::read_to_string(&path) {
                 Ok(pin) => pin,
                 Err(_) => ask_pin(rx, stdin)?,
             };
-
             ensure_parent_dirs(&path)?;
-            let mut cache = File::create(path)?;
+            let mut cache = File::create(&path)?;
             write!(cache, "{}", pin)?;
             drop(cache);
             let permissions = fs::Permissions::from_mode(0o600);
-            if let Err(_) = fs::set_permissions(path, permissions) {
+            if let Err(_) = fs::set_permissions(&path, permissions) {
                 println!("# FAILED TO SET 700 PERM for {}", path);
             }
             pin
