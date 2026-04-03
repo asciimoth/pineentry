@@ -61,7 +61,9 @@
       devShells.default = pkgs.mkShell {
         inherit (checks.pre-commit-check) shellHook;
         buildInputs = with pkgs; [
+          rustc
           cargo
+          rust-analyzer
 
           typos
           commitizen

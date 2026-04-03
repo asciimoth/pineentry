@@ -1,0 +1,2 @@
+# export PINEENTRY_CFG="./example_config.yaml"
+# cargo run
