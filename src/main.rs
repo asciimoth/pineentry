@@ -3,7 +3,7 @@ use regex::Regex;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, Write, stderr, stdin},
     os::unix::fs::PermissionsExt,
     path::Path,
@@ -13,12 +13,62 @@ use std::{
 };
 use users::{get_current_uid, get_user_by_uid};
 
+const CFG_PATH: &str = "~/.config/pineentry/config.yaml";
+
 const INITMSG: &str = r#"# PineEntry
 # A GNU pinentry caching proxy
 #
 # Src: https://github.com/asciimoth/pineentry
 # Config file: ~/.config/pineentry/config.yaml or alt with $PINEENTRY_CFG
 #"#;
+
+const DEFAULT_CONFIG: &str = r#"# Default PineEntry config
+# See https://github.com/asciimoth/pineentry
+
+# debug: true # Debug mode will show more logs in output
+servers:
+  # PineEntry will try servers one-by-one until found working one
+  - pinentry-qt
+  - pinentry-gtk
+  - pinentry-curses
+  - pinentry-tty
+# pins:
+#   # NOTE: !String pins are for debug only. Store secrets outside of config.
+#   very-secret-pin: !String very-secret-value
+#   # File to read.
+#   # NOTE: File content will NOT be trimmed.
+#   file-pin: !RoFile ~/secretfile1
+#   # Ask at first time and remember in file in tmpdir.
+#   # NOTE: PineEntry cache any input even one rejected by client.
+#   cache-pin: !Cache
+#   # Ask at first time and remember in file with provided path.
+#   cache-pin2: !Cache ~/custom-cache-dir/secretfile2
+#   # Read pin from env var
+#   env-pin: !Env MY_ENV_VAR
+# # Rules checked one-by-one in same order
+# rules:
+#   # For pin requests with "abc" in title
+#   - name: Rule1
+#     title: abc
+#     src: very-secret-pin # Pin source
+#   # For pin requests with title exactly equal "efg"
+#   - name: Rule2
+#     title: ^efg$
+#     src: file-pin
+#   # For pin requests with "h i j" in prompt
+#   - name: Rule3
+#     prompt: h i j
+#     src: cache-pin
+#   # For pin requests with "klm" or "nop" in prompt
+#   - name: Rule4
+#     prompt: klm|nop
+#     src: cache-pin2
+#   # For pin requests with "env" in title or prompt
+#   - name: Rule4
+#     title: env
+#     prompt: env
+#     src: env-pin
+"#;
 
 #[derive(Deserialize, Debug, Clone)]
 enum PinSrc {
@@ -101,7 +151,35 @@ enum Event {
     ServerStop(),
 }
 
+fn write_if_not_exists(path: &str, content: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true) // Fails if file already exists
+        .open(path)?;
+    file.write_all(content.as_bytes())?;
+    Ok(())
+}
+
+fn ensure_parent_dirs(path: &str) -> std::io::Result<()> {
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(parent)?;
+        let permissions = fs::Permissions::from_mode(0o700);
+        if let Err(_) = fs::set_permissions(parent, permissions) {
+            println!("# FAILED TO SET 700 PERM for {}", parent.to_string_lossy());
+        }
+    }
+    Ok(())
+}
+
+fn create_default_config() {
+    // Trying to create default cfg, ignoring errors
+    let path = shellexpand::tilde(CFG_PATH).to_string();
+    let _ = ensure_parent_dirs(&path);
+    let _ = write_if_not_exists(&path, DEFAULT_CONFIG);
+}
+
 fn load() -> anyhow::Result<Config> {
+    create_default_config();
     let default_servers = vec![
         String::from("pinentry-qt"),
         String::from("pinentry-gtk"),
@@ -109,7 +187,7 @@ fn load() -> anyhow::Result<Config> {
         String::from("pinentry-tty"),
     ];
 
-    let mut path = String::from("~/.config/pineentry/config.yaml");
+    let mut path = String::from(CFG_PATH);
     if let Ok(env) = std::env::var("PINEENTRY_CFG") {
         if env.len() > 0 {
             path = env
@@ -331,17 +409,6 @@ fn unescape(raw: &str) -> String {
     }
 
     result
-}
-
-fn ensure_parent_dirs(path: &str) -> std::io::Result<()> {
-    if let Some(parent) = Path::new(path).parent() {
-        fs::create_dir_all(parent)?;
-        let permissions = fs::Permissions::from_mode(0o700);
-        if let Err(_) = fs::set_permissions(parent, permissions) {
-            println!("# FAILED TO SET 700 PERM for {}", parent.to_string_lossy());
-        }
-    }
-    Ok(())
 }
 
 fn ask_pin(rx: &Receiver<Event>, mut stdin: &ChildStdin) -> anyhow::Result<String> {
