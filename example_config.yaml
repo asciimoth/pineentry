@@ -5,11 +5,12 @@ debug: true # Debug mode will show more logs in output
 #notify_callback: ["notify-desktop", "<<<MSG>>>"]
 servers:
   # PineEntry will try servers one-by-one until found working one
-  - non-existed-pinentry
-  - pinentry-qt
-  - pinentry-gtk
-  - pinentry-curses
-  - pinentry-tty
+  # NOTE: You should specify absolute path to binaries in your system
+  - /usr/bin/non-existed-pinentry
+  - /usr/bin/pinentry-qt
+  - /usr/bin/pinentry-gtk
+  - /usr/bin/pinentry-curses
+  - /usr/bin/pinentry-tty
 pins:
   # NOTE: !String pins are for debug only. Store secrets outside of config.
   very-secret-pin: !String very-secret-value

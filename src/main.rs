@@ -3,6 +3,7 @@ use regex::Regex;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
+    env,
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, Write, stderr, stdin},
     os::unix::fs::PermissionsExt,
@@ -92,6 +93,8 @@ struct Rule {
     title: Option<String>,
     // Prompt regexp
     prompt: Option<String>,
+    // Description regexp
+    desc: Option<String>,
     // PinSrc name
     src: String,
 }
@@ -100,6 +103,8 @@ struct Rule {
 struct Config {
     #[serde(default)]
     debug: bool,
+    #[serde(default)]
+    dumpenv: Option<String>, // Dump env vars to file
     #[serde(default)]
     notify_callback: Vec<String>,
     #[serde(default)]
@@ -111,7 +116,7 @@ struct Config {
 }
 
 impl Config {
-    fn match_rule(&self, title: &str, prompt: &str) -> Option<Rule> {
+    fn match_rule(&self, title: &str, prompt: &str, description: &str) -> Option<Rule> {
         'outer: for rule in &self.rules {
             if let Some(tr) = &rule.title {
                 let tr = match Regex::new(tr) {
@@ -139,6 +144,19 @@ impl Config {
                     return Some(rule.clone());
                 }
             }
+            if let Some(dr) = &rule.desc {
+                let dr = match Regex::new(dr) {
+                    Ok(dr) => dr,
+                    Err(err) => {
+                        println!("# BROKEN DESC REGEXP IN RULE {}: {}", rule.name, err);
+                        continue 'outer;
+                    }
+                };
+                if dr.is_match(description) {
+                    println!("# MATCHING RULE {} with src {}", rule.name, rule.src);
+                    return Some(rule.clone());
+                }
+            }
         }
         None
     }
@@ -152,6 +170,13 @@ enum Event {
     ClientInput(String),
     ServerOutput(String),
     ServerStop(),
+}
+
+fn dumpenv(file: &str) {
+    let mut f = File::create(file).expect("Failed to create dumpenv file");
+    for (key, value) in env::vars() {
+        writeln!(f, "{}={}", key, value).expect("Failed to write to dumpenv file");
+    }
 }
 
 fn write_if_not_exists(path: &str, content: &str) -> std::io::Result<()> {
@@ -204,6 +229,7 @@ fn load() -> anyhow::Result<Config> {
             println!("# Missing config, using default");
             return Ok(Config {
                 debug: false,
+                dumpenv: None,
                 notify_callback: vec![],
                 servers: default_servers,
                 pins: HashMap::new(),
@@ -257,7 +283,9 @@ fn launch(cfg: &Config) -> anyhow::Result<Server> {
             Ok(s) => {
                 return Ok(s);
             }
-            Err(err) => println!("# ERR: {}", err),
+            Err(err) => {
+                println!("# ERR: {}", err);
+            }
         }
     }
     Err(anyhow!("Failed to run any server"))
@@ -324,6 +352,7 @@ fn proxy(cfg: &Config, server: Server) -> anyhow::Result<()> {
 
     let mut prompt = String::new();
     let mut title = String::new();
+    let mut description = String::new();
 
     'outer: for ev in rx.iter() {
         match ev {
@@ -345,6 +374,7 @@ fn proxy(cfg: &Config, server: Server) -> anyhow::Result<()> {
                     if cfg.debug {
                         print!("# SETTING PROMPT TO {}", rp);
                         stdout.flush()?;
+                        notify(cfg, &format!("PROMPT:\n{}", p));
                     }
                     prompt = p;
                 } else if let Some(rt) = s.strip_prefix("SETTITLE ") {
@@ -352,20 +382,28 @@ fn proxy(cfg: &Config, server: Server) -> anyhow::Result<()> {
                     if cfg.debug {
                         print!("# SETTING TITLE TO {}", rt);
                         stdout.flush()?;
+                        notify(cfg, &format!("TITLE:\n{}", t));
                     }
                     title = t;
+                } else if let Some(rd) = s.strip_prefix("SETDESC ") {
+                    let d = unescape(rd);
+                    if cfg.debug {
+                        print!("# SETTING DESC TO {}", rd);
+                        stdout.flush()?;
+                        notify(cfg, &format!("DESC:\n{}", d));
+                    }
+                    description = d;
                 } else if s.starts_with("GETPIN") {
                     if cfg.debug {
                         println!("# ASKED FOR PIN");
                     }
-                    if let Some(pin) = get_pin(cfg, &prompt, &title, &rx, &stdin)? {
-                        println!("D {}", pin);
+                    if let Some(pin) = get_pin(cfg, &prompt, &title, &description, &rx, &stdin)? {
+                        println!("D {}\nOK", pin);
                         stdout.flush()?;
                         continue 'outer;
                     }
                 }
                 if cfg.debug {
-                    print!("# PIPTING client -> server {}", s);
                     stdout.flush()?;
                 }
                 write!(stdin, "{}", s)?;
@@ -373,7 +411,6 @@ fn proxy(cfg: &Config, server: Server) -> anyhow::Result<()> {
             }
             Event::ServerOutput(s) => {
                 if cfg.debug {
-                    print!("# PIPTING client <- server {}", s);
                     stdout.flush()?;
                 }
                 print!("{}", s);
@@ -459,10 +496,11 @@ fn get_pin(
     cfg: &Config,
     prompt: &str,
     title: &str,
+    description: &str,
     rx: &Receiver<Event>,
     stdin: &ChildStdin,
 ) -> anyhow::Result<Option<String>> {
-    let rule = match cfg.match_rule(title, prompt) {
+    let rule = match cfg.match_rule(title, prompt, description) {
         Some(rule) => rule,
         None => {
             return Ok(None);
@@ -540,6 +578,9 @@ fn main() -> anyhow::Result<()> {
     let cfg = load()?;
     if cfg.debug {
         println!("# DEBUG MODE ON");
+    }
+    if let Some(file) = &cfg.dumpenv {
+        dumpenv(file);
     }
     let srv = launch(&cfg)?;
     println!("#\n# Try to type HELP command\n#");
