@@ -525,7 +525,10 @@ fn get_pin(
             let pin = fs::read_to_string(&path)?;
             notify(
                 cfg,
-                &format!("Secred from file {} used for rule {}", path, rule.name),
+                &format!(
+                    "Secret from file:\n {}\nused for rule:\n {}",
+                    path, rule.name
+                ),
             );
             pin
         }
@@ -553,7 +556,10 @@ fn get_pin(
                 Ok(pin) => {
                     notify(
                         cfg,
-                        &format!("Secred cached in {} used for rule {}", path, rule.name),
+                        &format!(
+                            "Secret cached in:\n {} used for rule:\n {}",
+                            path, rule.name
+                        ),
                     );
                     pin
                 }
